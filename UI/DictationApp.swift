@@ -175,7 +175,7 @@ final class AppState: ObservableObject {
 
         var env = ProcessInfo.processInfo.environment
         let existingPath = env["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin"
-        env["PATH"] = "/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:\(existingPath)"
+        env["PATH"] = "\(installedPython.deletingLastPathComponent().path):/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:\(existingPath)"
         process.environment = env
 
         // Redirect backend logs to ~/Library/Logs/MacLocalDictation/backend.log

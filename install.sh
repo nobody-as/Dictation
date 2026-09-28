@@ -57,7 +57,10 @@ echo "Setting up the local speech engine (this may take several minutes)…"
 "$uv_bin" venv --python 3.12 "$VENV"
 if [[ "$ARCH" == arm64 ]]; then
     "$uv_bin" pip install --only-binary :all: --python "$VENV/bin/python3" \
-        'mlx-whisper==0.4.3' 'speechbrain==1.1.1' 'torch' 'torchaudio' 'soundfile'
+        'mlx-whisper==0.4.3' 'speechbrain==1.1.1' 'torch' 'torchaudio' 'soundfile' 'imageio-ffmpeg==0.6.0'
+    ffmpeg_exe="$("$VENV/bin/python3" -c 'import imageio_ffmpeg; print(imageio_ffmpeg.get_ffmpeg_exe())')"
+    [[ -x "$ffmpeg_exe" ]] || fail "The FFmpeg executable is missing."
+    ln -sf "$ffmpeg_exe" "$VENV/bin/ffmpeg"
 else
     "$uv_bin" pip install --only-binary :all: --python "$VENV/bin/python3" 'faster-whisper==1.2.1'
 fi

@@ -26,7 +26,7 @@ jobs:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
           version="${RELEASE_TAG#v}"
-          if [[ "$RELEASE_TAG" != v* ]]; then version="2.2.1"; fi
+          if [[ "$RELEASE_TAG" != v* ]]; then version="2.2.2"; fi
           python3 -m py_compile Backend/server_intel.py
           bash scripts/package_app.sh "$RUNNER_TEMP/package" "$version" "${{ matrix.arch }}"
           cd "$RUNNER_TEMP/package"
