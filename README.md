@@ -9,7 +9,7 @@ A completely local dictation tool for macOS powered by **Whisper**. It runs righ
 Open Terminal on your Mac and run:
 
 ```bash
-set -o pipefail; curl -fsSL https://raw.githubusercontent.com/Asumal5911/Dictation/master/install.sh | bash
+set -o pipefail; curl -fsSL https://raw.githubusercontent.com/nobody-as/Dictation/master/install.sh | bash
 ```
 
 The installer chooses the build for your Mac's processor, downloads the prebuilt app, verifies its checksum and signature, installs it in `/Applications` (or `~/Applications` when system Applications is not writable), prepares a private Python environment for the speech engine, and opens the app. You do not need Xcode, a source checkout, or Homebrew. You need internet access for installation and the first speech-model download; dictation then runs locally. Grant microphone and accessibility access when macOS asks.

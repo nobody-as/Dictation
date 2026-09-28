@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-RELEASE_URL="https://github.com/Asumal5911/Dictation/releases/latest/download"
+RELEASE_URL="https://github.com/nobody-as/Dictation/releases/latest/download"
 ARCH="$(uname -m)"
 ARCHIVE="Dictation-macos-$ARCH.zip"
 SUPPORT_DIR="$HOME/Library/Application Support/MacLocalDictation"
