@@ -32,7 +32,8 @@ jobs:
           cd "$RUNNER_TEMP/package"
           archive="Dictation-macos-${{ matrix.arch }}.zip"
           ditto -c -k --keepParent Dictation.app "$RUNNER_TEMP/$archive"
-          shasum -a 256 "$RUNNER_TEMP/$archive" | sed 's@.*/@@' > "$RUNNER_TEMP/$archive.sha256"
+          cd "$RUNNER_TEMP"
+          shasum -a 256 "$archive" > "$archive.sha256"
       - uses: actions/upload-artifact@v4
         with:
           name: macos-${{ matrix.arch }}
