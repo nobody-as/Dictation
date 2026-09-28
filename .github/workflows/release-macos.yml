@@ -1,0 +1,64 @@
+name: Build Mac release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-26
+          - arch: x86_64
+            runner: macos-26-intel
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build app
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          version="${RELEASE_TAG#v}"
+          if [[ "$RELEASE_TAG" != v* ]]; then version="2.2.1"; fi
+          python3 -m py_compile Backend/server_intel.py
+          bash scripts/package_app.sh "$RUNNER_TEMP/package" "$version" "${{ matrix.arch }}"
+          cd "$RUNNER_TEMP/package"
+          archive="Dictation-macos-${{ matrix.arch }}.zip"
+          ditto -c -k --keepParent Dictation.app "$RUNNER_TEMP/$archive"
+          shasum -a 256 "$RUNNER_TEMP/$archive" | sed 's@.*/@@' > "$RUNNER_TEMP/$archive.sha256"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-${{ matrix.arch }}
+          path: |
+            ${{ runner.temp }}/Dictation-macos-${{ matrix.arch }}.zip
+            ${{ runner.temp }}/Dictation-macos-${{ matrix.arch }}.zip.sha256
+          if-no-files-found: error
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: macos-*
+          path: dist
+          merge-multiple: true
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$RELEASE_TAG" \
+            dist/Dictation-macos-arm64.zip \
+            dist/Dictation-macos-arm64.zip.sha256 \
+            dist/Dictation-macos-x86_64.zip \
+            dist/Dictation-macos-x86_64.zip.sha256 \
+            --title "Dictation $RELEASE_TAG" \
+            --notes "Mac app for Apple Silicon and Intel. Run the installer in the README to set up the app and its local speech engine."

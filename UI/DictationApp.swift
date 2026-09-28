@@ -149,7 +149,11 @@ final class AppState: ObservableObject {
             return
         }
         let workDir = "\(resourcePath)/Backend"
+        #if arch(x86_64)
+        let script = "\(workDir)/server_intel.py"
+        #else
         let script = "\(workDir)/server.py"
+        #endif
 
         guard FileManager.default.fileExists(atPath: script) else {
             backendLaunchFailed("Backend server.py is missing in bundle")
@@ -157,8 +161,16 @@ final class AppState: ObservableObject {
         }
 
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/zsh")
-        process.arguments = ["-l", "-c", "python3 \"\(script)\""]
+        let installedPython = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/MacLocalDictation/venv/bin/python3")
+        if FileManager.default.isExecutableFile(atPath: installedPython.path) {
+            process.executableURL = installedPython
+            process.arguments = [script]
+        } else {
+            // Keep source builds usable with an existing Python installation.
+            process.executableURL = URL(fileURLWithPath: "/bin/zsh")
+            process.arguments = ["-l", "-c", "python3 \"\(script)\""]
+        }
         process.currentDirectoryURL = URL(fileURLWithPath: workDir)
 
         var env = ProcessInfo.processInfo.environment
