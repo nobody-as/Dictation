@@ -12,7 +12,8 @@ struct SessionTests {
         try audioHandoff()
         try failedRotationKeepsRecording()
         try concurrentHandoff()
-        print("PASS: session ordering, retries, stale callbacks, audio handoff and file isolation")
+        pasteTargeting()
+        print("PASS: session ordering, retries, audio continuity and paste destination safety")
     }
 
     static func queueOrderingAndRetry() throws {
@@ -165,6 +166,56 @@ struct SessionTests {
         }
         expect(result.count == Int(file.length), "Read every frame, including short final reads")
         return result
+    }
+
+    static func pasteTargeting() {
+        // Fake app + field IDs only. Never inspect a real app or clipboard.
+        struct Field: Equatable { let app: Int; let field: Int }
+        let selected = Field(app: 1, field: 10)
+        let otherApp = Field(app: 2, field: 20)
+        let otherField = Field(app: 1, field: 11)
+        var focus: Field? = selected
+        var copied: [String] = []
+        var inserted: [Field] = []
+        var requests: [Field] = []
+        var insertionSucceeds = true
+        var copyingSucceeds = true
+        var switchDuringInsertion: Field?
+        let delivery = PasteDelivery<Field>(
+            currentTarget: { focus },
+            copyText: { text in copied.append(text); return copyingSucceeds },
+            insertText: { _, target in
+                inserted.append(target)
+                if let newFocus = switchDuringInsertion { focus = newFocus }
+                return insertionSucceeds
+            },
+            requestPaste: { target in requests.append(target); return true }
+        )
+        expect(delivery.deliver("notes", to: selected) == .inserted, "Insert into the verified selected field")
+        expect(inserted == [selected] && requests.isEmpty, "Direct insertion must not also paste")
+        focus = otherApp
+        expect(delivery.deliver("kept", to: selected) == .copied, "Switching apps must keep notes available")
+        expect(inserted.count == 1 && requests.isEmpty, "Never insert into another application")
+        focus = otherField
+        expect(delivery.deliver("same app", to: selected) == .copied, "Switching fields must not reuse a stale control")
+        expect(inserted.count == 1, "Never insert into a different field in the same application")
+        focus = selected
+        insertionSucceeds = false
+        expect(delivery.deliver("fallback", to: selected) == .pasteRequested, "Unsupported AX fields get one targeted paste")
+        expect(requests == [selected], "Exactly one targeted paste request")
+        switchDuringInsertion = otherApp
+        expect(delivery.deliver("changed during AX", to: selected) == .copied, "Recheck focus after failed AX insertion")
+        expect(requests.count == 1, "Do not paste after a focus change during AX")
+        focus = selected
+        switchDuringInsertion = nil
+        copyingSucceeds = false
+        expect(delivery.deliver("clipboard unavailable", to: selected) == .retained, "Retain notes if clipboard writing fails")
+        expect(requests.count == 1, "Never paste stale clipboard content")
+        let beforeSecure = copied.count
+        expect(delivery.deliver("private", to: selected, secureField: true) == .retained, "Secure fields block automatic delivery")
+        expect(copied.count == beforeSecure, "Secure-field refusal must not alter clipboard")
+        expect(delivery.deliver("uncaptured", to: nil) == .retained, "Missing target must not guess another application")
+        print("Verified paste targeting with app switches, field switches, AX failures and clipboard failures")
     }
 
     static func tryData(_ url: URL) -> Data? { try? Data(contentsOf: url) }

@@ -269,7 +269,8 @@ class SpeakerIdentifier:
             print(f"Speaker identification error: {e}")
             return None
 
-global_speaker_identifier = SpeakerIdentifier()
+# Speaker profiles are not used by the transcription endpoint. Do not load
+# or modify the personal speaker database as a backend startup side effect.
 
 class DictationServer(BaseHTTPRequestHandler):
 

@@ -34,13 +34,13 @@ The floating bubble supports consecutive sessions:
 - **×** cancels only the current, unsubmitted segment. Earlier submitted sessions continue processing.
 - The waveform stays live during recording. The spinner count shows how many submitted sessions are waiting or processing.
 
-For example, press **+** at minute 30 to generate notes for minutes 0–30 while recording minutes 30 onward. Press **+** as often as needed. Speech recognition, formatting, and delivery run in submission order to avoid overlapping model work and out-of-order notes. Each segment captures its own paste destination at its start. Keep the cursor in the intended note field; a completed session can activate that application to insert notes while recording continues.
+For example, press **+** at minute 30 to generate notes for minutes 0–30 while recording minutes 30 onward. Press **+** as often as needed. Speech recognition, formatting, and delivery run in submission order to avoid overlapping model work and out-of-order notes. Each segment captures the selected app and text field when you press **+** or **✓**. Automatic delivery happens only if that same app and field are still selected when notes finish; Dictation never activates another app to paste. If you switch away, notes stay available through the clipboard or the session’s **Copy** button. Unsupported Accessibility fields get at most one process-targeted paste request, with no system-wide keystroke or AppleScript fallback.
 
 The menu lists this app launch's sessions. Use **Copy** to retrieve any completed session's notes, **Retry** for a failed transcription, or the folder button to find that segment's WAV in Finder. Session audio uses unique files inside private `Dictation-<UUID>` folders in the macOS temporary directory. Splitting, retrying, and starting another recording do not overwrite those files. The app retains them, including failed or cancelled segments; macOS may eventually purge temporary files. Copy notes or save needed audio elsewhere before quitting. The session list and formatted notes are held in memory and are not restored after relaunch. Stop-engine and quit buttons are disabled while recording or submitted work is pending.
 
 ### Development checks
 
-Run `bash scripts/test_sessions.sh` on a Mac. It tests session ordering/retry and sample-preserving audio handoff using generated PCM buffers, without microphone, clipboard, live backend, or user recordings. Build an isolated app with `bash scripts/package_app.sh OUTPUT_DIR VERSION arm64` (or `x86_64`). `UI/build_ui.sh` is the existing install-and-launch helper; use the packaging script for build-only verification.
+Run `bash scripts/test_sessions.sh` on a Mac. It tests session ordering/retry and sample-preserving audio handoff using generated PCM buffers, and verifies paste targeting with fake app/field identities. Tests do not access the microphone, clipboard, live backend, or user recordings. Build an isolated app with `bash scripts/package_app.sh OUTPUT_DIR VERSION arm64` (or `x86_64`). `UI/build_ui.sh` is the existing install-and-launch helper; use the packaging script for build-only verification.
 
 ## 🧠 How the AI Note Formatting Works
 This app uses local speech recognition on both Mac processor families:
@@ -58,5 +58,5 @@ If you are running an older version of macOS (or if the AI model isn't available
 
 ## ⚠️ Quick Usage Notes
 Because this app runs locally and pastes directly into your workflow, there are two important things to keep in mind:
-1. **Cursor Focus is Required:** When you finish dictating and hit the checkmark, the app will automatically type the transcribed text into your currently active window. Make sure you have actually clicked inside a document, note, or text field before confirming!
+1. **Cursor Focus is Required:** When you finish dictating and hit the checkmark, the app captures your selected app and text field. It inserts the notes only if that same destination is still selected when processing finishes. If you switch apps or fields, retrieve the notes with **Copy** in the menu and paste them where you want.
 2. **Give it a Second:** The local Whisper engine and Apple Intelligence are fast, but they still have to think! Depending on how long you were speaking, you will see a green progress bar as it transcribes and formats. Just give it a brief moment to do its magic.

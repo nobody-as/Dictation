@@ -396,7 +396,6 @@ final class AppState: ObservableObject {
         }
 
         let destination = QuickDictator()
-        destination.captureFocus()
         guard audioRecorder.startRecording() else {
             engineStatusText = "Microphone unavailable"
             return
@@ -421,10 +420,10 @@ final class AppState: ObservableObject {
         guard isQuickDictating, let destination = recordingDestination else { return }
         do {
             let audioURL = try audioRecorder.splitRecording()
-            // Each segment owns its focus snapshot; later recording cannot change it.
-            let nextDestination = QuickDictator()
-            nextDestination.captureFocus()
-            recordingDestination = nextDestination
+            // The user's selection at submission is this session's destination.
+            // Later recording and focus changes cannot retarget submitted notes.
+            destination.captureFocus()
+            recordingDestination = QuickDictator()
             recordingStartedByHold = false
             sessionQueue.enqueue(audioURL: audioURL, destination: destination)
         } catch {
@@ -434,6 +433,7 @@ final class AppState: ObservableObject {
 
     func finishQuickDictation() {
         guard isQuickDictating, let destination = recordingDestination else { return }
+        destination.captureFocus()
         let audioURL = audioRecorder.stopRecording()
         if let error = audioRecorder.lastError {
             recordingIssue = "Recording ended with an error: \(error.localizedDescription). Available audio retained."
@@ -508,10 +508,10 @@ final class AppState: ObservableObject {
                     DispatchQueue.main.async {
                         guard let self else { return }
                         update(.delivering)
-                        session.destination.pasteDictationResult(session.number > 1 ? "\n\n" + formattedText : formattedText) { [weak self] inserted in
+                        session.destination.pasteDictationResult(session.number > 1 ? "\n\n" + formattedText : formattedText) { [weak self] result in
                             DispatchQueue.main.async {
                                 guard let self else { return }
-                                self.showCompletionToast("Session \(session.number): " + (inserted ? "Pasted!" : "Copied (⌘V)"))
+                                self.showCompletionToast("Session \(session.number): " + result.message)
                                 completion(.success(formattedText))
                             }
                         }
