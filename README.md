@@ -25,6 +25,23 @@ I designed it specifically for note-taking. When you're sitting in a lecture, yo
 - **100% Free & Local:** Runs locally on your Mac using Whisper—no subscriptions or internet required after setup.
 - **Global Shortcuts:** Seamlessly start and stop dictation without leaving the app you are currently typing in.
 
+## Keep recording while notes are generated
+
+The floating bubble supports consecutive sessions:
+
+- **+** submits the audio recorded so far and immediately begins the next segment. The microphone stays running while earlier notes transcribe, format, and paste.
+- **✓** submits the current segment and stops listening. You can press **+** again, or use Fn / Option+D, to start another recording while notes finish.
+- **×** cancels only the current, unsubmitted segment. Earlier submitted sessions continue processing.
+- The waveform stays live during recording. The spinner count shows how many submitted sessions are waiting or processing.
+
+For example, press **+** at minute 30 to generate notes for minutes 0–30 while recording minutes 30 onward. Press **+** as often as needed. Speech recognition, formatting, and delivery run in submission order to avoid overlapping model work and out-of-order notes. Each segment captures its own paste destination at its start. Keep the cursor in the intended note field; a completed session can activate that application to insert notes while recording continues.
+
+The menu lists this app launch's sessions. Use **Copy** to retrieve any completed session's notes, **Retry** for a failed transcription, or the folder button to find that segment's WAV in Finder. Session audio uses unique files inside private `Dictation-<UUID>` folders in the macOS temporary directory. Splitting, retrying, and starting another recording do not overwrite those files. The app retains them, including failed or cancelled segments; macOS may eventually purge temporary files. Copy notes or save needed audio elsewhere before quitting. The session list and formatted notes are held in memory and are not restored after relaunch. Stop-engine and quit buttons are disabled while recording or submitted work is pending.
+
+### Development checks
+
+Run `bash scripts/test_sessions.sh` on a Mac. It tests session ordering/retry and sample-preserving audio handoff using generated PCM buffers, without microphone, clipboard, live backend, or user recordings. Build an isolated app with `bash scripts/package_app.sh OUTPUT_DIR VERSION arm64` (or `x86_64`). `UI/build_ui.sh` is the existing install-and-launch helper; use the packaging script for build-only verification.
+
 ## 🧠 How the AI Note Formatting Works
 This app uses local speech recognition on both Mac processor families:
 1. **Speech-to-Text:** Apple Silicon Macs use `Whisper Large v3 Turbo` through Apple's **MLX** framework. Intel Macs use the smaller Whisper model through **faster-whisper** on the CPU, so transcription may take longer and accuracy may differ.

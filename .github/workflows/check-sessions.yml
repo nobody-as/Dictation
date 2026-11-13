@@ -1,0 +1,23 @@
+name: Check continuous dictation
+on:
+  push:
+    branches: ['**']
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  check:
+    strategy:
+      matrix:
+        include:
+          - runner: macos-26
+            arch: arm64
+          - runner: macos-26-intel
+            arch: x86_64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test synthetic audio and session queue
+        run: bash scripts/test_sessions.sh
+      - name: Build isolated app
+        run: bash scripts/package_app.sh "$RUNNER_TEMP/session-build" "2.3.0-preview" "${{ matrix.arch }}"

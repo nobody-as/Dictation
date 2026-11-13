@@ -115,6 +115,51 @@ struct MenuView: View {
                 }
             }
 
+            if let issue = appState.recordingIssue {
+                Text(issue)
+                    .font(.caption)
+                    .foregroundColor(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if !appState.sessions.isEmpty {
+                Divider()
+                Text("Dictation Sessions")
+                    .font(.caption.weight(.semibold))
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 8) {
+                        ForEach(appState.sessions) { session in
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Session \(session.number)")
+                                        .font(.caption.weight(.semibold))
+                                    Text(session.state.label)
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                }
+                                Spacer()
+                                Button {
+                                    NSWorkspace.shared.activateFileViewerSelecting([session.audioURL])
+                                } label: {
+                                    Image(systemName: "folder")
+                                }
+                                .help("Show session \(session.number) audio in Finder")
+                                .accessibilityLabel("Show session \(session.number) audio")
+                                if session.notes != nil {
+                                    Button("Copy") { appState.copySessionNotes(session) }
+                                        .help("Copy session \(session.number) notes")
+                                }
+                                if case .failed(let error) = session.state {
+                                    Button("Retry") { appState.retrySession(session) }
+                                        .help(error)
+                                }
+                            }
+                        }
+                    }
+                }
+                .frame(maxHeight: 160)
+            }
+
             Divider()
 
             if appState.batteryWarning {
@@ -130,6 +175,7 @@ struct MenuView: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundColor(.green)
+                .disabled(appState.isQuickDictating || appState.isTranscribing)
 
                 Button(action: appState.stopBackgroundTasks) {
                     Label("Stop Dictation Engine", systemImage: "stop.circle")
@@ -137,6 +183,7 @@ struct MenuView: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundColor(.red)
+                .disabled(appState.isQuickDictating || appState.isTranscribing)
             } else {
                 Button(action: appState.startBackgroundTasks) {
                     Label("Start Dictation Engine", systemImage: "play.circle.fill")
@@ -154,7 +201,14 @@ struct MenuView: View {
             }
             .buttonStyle(.plain)
 
-            Text("Press ⌥D (Option+D) or tap Fn to dictate. Hold Fn for push-to-talk.")
+            if appState.isQuickDictating {
+                Button(action: appState.continueQuickDictation) {
+                    Label("Notes So Far + Keep Recording", systemImage: "plus.circle.fill")
+                }
+                .buttonStyle(.plain)
+            }
+
+            Text("Press ⌥D or tap Fn to dictate. Hold Fn for push-to-talk. Use + to get notes and keep listening.")
                 .font(.caption2)
                 .foregroundColor(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -167,6 +221,7 @@ struct MenuView: View {
                     .foregroundColor(.secondary)
             }
             .buttonStyle(.plain)
+            .disabled(appState.isQuickDictating || appState.isTranscribing)
 
             Button(action: {
                 appState.stopBackgroundTasks()
@@ -177,6 +232,7 @@ struct MenuView: View {
                     .foregroundColor(.red)
             }
             .buttonStyle(.plain)
+            .disabled(appState.isQuickDictating || appState.isTranscribing)
         }
         .padding()
         .frame(width: 310)

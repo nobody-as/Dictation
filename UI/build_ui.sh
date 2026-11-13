@@ -13,7 +13,7 @@ mkdir -p "$APP_NAME.app/Contents/MacOS"
 mkdir -p "$APP_NAME.app/Contents/Resources"
 cp -R ../Backend "$APP_NAME.app/Contents/Resources/"
 
-swiftc DictationApp.swift MenuView.swift FloatingDictationView.swift QuickDictation.swift AudioRecorder.swift HotkeyManager.swift NoteFormatter.swift \
+swiftc DictationApp.swift MenuView.swift FloatingDictationView.swift QuickDictation.swift AudioRecorder.swift DictationSessionQueue.swift HotkeyManager.swift NoteFormatter.swift \
     -o "$APP_NAME.app/Contents/MacOS/$APP_NAME" \
     -target arm64-apple-macosx13.0 \
     -framework Cocoa \

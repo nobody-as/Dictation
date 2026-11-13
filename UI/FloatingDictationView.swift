@@ -1,33 +1,25 @@
 import SwiftUI
 
+// Select the property-wrapper type even on SDKs that also export a State macro.
+private typealias StoredState<Value> = SwiftUI.State<Value>
+
 struct FloatingDictationView: View {
     @ObservedObject var appState: AppState
-    @State private var isHovering = false
+    @StoredState private var isHovering = false
 
     var body: some View {
         Group {
-            if appState.isQuickDictating {
-                // ACTIVE STATE: Cancel Button
+            if appState.isQuickDictating || appState.isTranscribing {
                 HStack(spacing: 12) {
-                    Button(action: {
-                        withAnimation(.easeInOut(duration: 0.25)) {
-                            appState.cancelQuickDictation()
+                    if appState.isQuickDictating {
+                        Button(action: appState.cancelQuickDictation) {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(.gray)
                         }
-                    }) {
-                        Image(systemName: "xmark.circle.fill")
-                            .resizable()
-                            .frame(width: 16, height: 16)
-                            .foregroundColor(.gray)
-                    }
-                    .buttonStyle(PlainButtonStyle())
+                        .buttonStyle(.plain)
+                        .help("Cancel current session; submitted sessions keep processing")
+                        .accessibilityLabel("Cancel current dictation session")
 
-                    // Dynamic live waveform or loading spinner
-                    if appState.isTranscribing {
-                        ProgressView()
-                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                            .scaleEffect(0.8)
-                            .frame(width: 44, height: 20)
-                    } else {
                         HStack(spacing: 3) {
                             ForEach(0..<8, id: \.self) { i in
                                 let baseScale = 0.5 + 0.5 * sin(Double(i) * 0.9 + 0.5)
@@ -39,25 +31,49 @@ struct FloatingDictationView: View {
                             }
                         }
                         .frame(width: 44, height: 20)
-                    }
+                        .accessibilityLabel("Recording session \(appState.sessions.count + 1)")
 
-                    // Confirm/Finish Button
-                    if !appState.isTranscribing {
-                        Button(action: {
-                            withAnimation(.easeInOut(duration: 0.25)) {
-                                appState.finishQuickDictation()
-                            }
-                        }) {
+                        Button(action: appState.continueQuickDictation) {
+                            Image(systemName: "plus.circle.fill")
+                                .foregroundColor(.green)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Generate notes so far and keep recording a new session")
+                        .accessibilityLabel("Submit notes and start next session")
+
+                        Button(action: appState.finishQuickDictation) {
                             Image(systemName: "checkmark.circle.fill")
-                                .resizable()
-                                .frame(width: 16, height: 16)
                                 .foregroundColor(.white)
                         }
-                        .buttonStyle(PlainButtonStyle())
+                        .buttonStyle(.plain)
+                        .help("Finish recording and generate notes for this session")
+                        .accessibilityLabel("Finish dictation")
                     } else {
-                        Color.clear.frame(width: 20, height: 20)
+                        Button(action: appState.startQuickDictation) {
+                            Image(systemName: "plus.circle.fill")
+                                .foregroundColor(.green)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Start another recording while notes process")
+                        .accessibilityLabel("Start next dictation session")
+                    }
+
+                    if appState.isTranscribing {
+                        HStack(spacing: 4) {
+                            ProgressView()
+                                .controlSize(.small)
+                                .scaleEffect(0.7)
+                                .frame(width: 14, height: 16)
+                            Text("\(appState.pendingSessionCount)")
+                                .font(.system(size: 11, weight: .semibold))
+                                .monospacedDigit()
+                                .foregroundColor(.white)
+                        }
+                        .help("\(appState.pendingSessionCount) session(s) waiting or processing")
+                        .accessibilityLabel("\(appState.pendingSessionCount) sessions processing")
                     }
                 }
+                .font(.system(size: 16))
                 .padding(.horizontal, 14)
                 .padding(.vertical, 8)
                 .background(

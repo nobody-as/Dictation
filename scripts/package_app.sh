@@ -16,7 +16,7 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/Backend"
 cp "$ROOT/Backend/server.py" "$APP/Contents/Resources/Backend/server.py"
 cp "$ROOT/Backend/server_intel.py" "$APP/Contents/Resources/Backend/server_intel.py"
 
-sources=(DictationApp.swift MenuView.swift FloatingDictationView.swift QuickDictation.swift AudioRecorder.swift HotkeyManager.swift NoteFormatter.swift)
+sources=(DictationApp.swift MenuView.swift FloatingDictationView.swift QuickDictation.swift AudioRecorder.swift DictationSessionQueue.swift HotkeyManager.swift NoteFormatter.swift)
 if [[ -f "$ROOT/UI/ShortcutRecorderView.swift" ]]; then
     sources+=(ShortcutRecorderView.swift)
 fi

@@ -33,7 +33,12 @@ final class AppState: ObservableObject {
 
     private var floatingPanel: NSPanel?
     private let audioRecorder = QuickAudioRecorder()
-    private let dictator = QuickDictator()
+    typealias Session = DictationSessionQueue<QuickDictator>.Session
+    @Published var sessions: [Session] = []
+    @Published var pendingSessionCount = 0
+    @Published var recordingIssue: String?
+    private let sessionQueue = DictationSessionQueue<QuickDictator>()
+    private var recordingDestination: QuickDictator?
     private let noteFormatter = ContextualNoteFormatter()
     private let hotkeyManager = HotkeyManager()
     private var timer: Timer?
@@ -47,6 +52,20 @@ final class AppState: ObservableObject {
     private var failedHealthProbes = 0
 
     init() {
+        sessionQueue.process = { [weak self] session, update, completion in
+            self?.processSession(session, update: update, completion: completion)
+        }
+        sessionQueue.onChange = { [weak self] in self?.refreshSessionState() }
+        audioRecorder.onFailure = { [weak self] url, error in
+            guard let self else { return }
+            self.endRecordingUI()
+            self.recordingIssue = "Recording stopped: \(error.localizedDescription). Available audio retained."
+            if let url, let destination = self.recordingDestination {
+                self.sessionQueue.enqueue(audioURL: url, destination: destination)
+            }
+            self.recordingDestination = nil
+            self.refreshSessionState()
+        }
         DispatchQueue.main.async {
             self.setupPersistentFloatingPill()
             self.configureHotkey()
@@ -87,7 +106,6 @@ final class AppState: ObservableObject {
         hotkeyManager.onFnDown = { [weak self] in
             DispatchQueue.main.async {
                 guard let self else { return }
-                guard !self.isTranscribing else { return }
                 if !self.isQuickDictating {
                     self.recordingStartedByHold = true
                     self.startQuickDictation()
@@ -98,7 +116,7 @@ final class AppState: ObservableObject {
         hotkeyManager.onFnUp = { [weak self] duration in
             DispatchQueue.main.async {
                 guard let self else { return }
-                guard self.isQuickDictating, !self.isTranscribing else { return }
+                guard self.isQuickDictating else { return }
 
                 if self.recordingStartedByHold {
                     if duration >= 0.40 {
@@ -289,12 +307,13 @@ final class AppState: ObservableObject {
 
     private func applyHealthyBackendState(state: String, detail: String) {
         isBackendRunning = true
-        if !isTranscribing {
+        if !isTranscribing && !isQuickDictating {
             engineStatusText = state == "transcribing" ? "Transcribing…" : (detail.isEmpty ? "Engine Ready" : detail)
         }
     }
 
     func stopBackgroundTasks() {
+        guard !isQuickDictating, !isTranscribing else { return }
         isStartingBackend = false
         isStoppingBackend = true
         backendProcess?.terminate()
@@ -357,7 +376,7 @@ final class AppState: ObservableObject {
     }
 
     func startQuickDictation() {
-        guard !isQuickDictating, !isTranscribing else { return }
+        guard !isQuickDictating else { return }
 
         // Check microphone permission
         if !QuickAudioRecorder.hasMicrophonePermission {
@@ -376,13 +395,17 @@ final class AppState: ObservableObject {
             startBackgroundTasks()
         }
 
-        dictator.captureFocus()
+        let destination = QuickDictator()
+        destination.captureFocus()
         guard audioRecorder.startRecording() else {
             engineStatusText = "Microphone unavailable"
             return
         }
+        recordingDestination = destination
+        recordingIssue = nil
+        completionToast = nil
         isQuickDictating = true
-        preventSleep()
+        refreshSessionState()
         setupPersistentFloatingPill()
 
         // Live audio level metering for visual feedback
@@ -393,99 +416,103 @@ final class AppState: ObservableObject {
         }
     }
 
-    func finishQuickDictation() {
-        guard isQuickDictating, !isTranscribing else { return }
-        isTranscribing = true
-        meterTimer?.invalidate()
-        meterTimer = nil
-        audioLevel = 0
-        engineStatusText = "Transcribing speech…"
-
-        audioRecorder.stopRecording { [weak self] data in
-            guard let self, let audioData = data, !audioData.isEmpty else {
-                DispatchQueue.main.async {
-                    self?.allowSleep()
-                    self?.isTranscribing = false
-                    self?.isQuickDictating = false
-                    self?.engineStatusText = "Audio recording empty"
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-                        if self?.isQuickDictating == false && self?.isTranscribing == false {
-                            self?.engineStatusText = "Engine Ready"
-                        }
-                    }
-                }
-                return
-            }
-            self.transcribeAudio(audioData: audioData)
+    /// Submit everything so far without stopping the microphone or live meter.
+    func continueQuickDictation() {
+        guard isQuickDictating, let destination = recordingDestination else { return }
+        do {
+            let audioURL = try audioRecorder.splitRecording()
+            // Each segment owns its focus snapshot; later recording cannot change it.
+            let nextDestination = QuickDictator()
+            nextDestination.captureFocus()
+            recordingDestination = nextDestination
+            recordingStartedByHold = false
+            sessionQueue.enqueue(audioURL: audioURL, destination: destination)
+        } catch {
+            recordingIssue = "Could not start a new session: \(error.localizedDescription). Current session is still active."
         }
     }
 
-    private func transcribeAudio(audioData: Data) {
-        guard let url = URL(string: "http://127.0.0.1:8080/transcribe") else { return }
+    func finishQuickDictation() {
+        guard isQuickDictating, let destination = recordingDestination else { return }
+        let audioURL = audioRecorder.stopRecording()
+        if let error = audioRecorder.lastError {
+            recordingIssue = "Recording ended with an error: \(error.localizedDescription). Available audio retained."
+        }
+        recordingDestination = nil
+        endRecordingUI()
+        if let audioURL {
+            sessionQueue.enqueue(audioURL: audioURL, destination: destination)
+        }
+        refreshSessionState()
+    }
+
+    private func endRecordingUI() {
+        isQuickDictating = false
+        recordingStartedByHold = false
+        meterTimer?.invalidate()
+        meterTimer = nil
+        audioLevel = 0
+    }
+
+    private func refreshSessionState() {
+        sessions = sessionQueue.sessions
+        pendingSessionCount = sessionQueue.pendingCount
+        isTranscribing = pendingSessionCount > 0
+        if isQuickDictating || isTranscribing { preventSleep() } else { allowSleep() }
+        if isQuickDictating {
+            engineStatusText = isTranscribing
+                ? "Listening · \(pendingSessionCount) session(s) processing"
+                : "Listening…"
+        } else if let active = sessions.first(where: { $0.state.isPending }) {
+            engineStatusText = "Session \(active.number): \(active.state.label)"
+        } else if let latest = sessions.last {
+            engineStatusText = "Session \(latest.number): \(latest.state.label)"
+        } else {
+            engineStatusText = "Engine Ready"
+        }
+    }
+
+    private func processSession(
+        _ session: Session,
+        update: @escaping (DictationSessionQueue<QuickDictator>.State) -> Void,
+        completion: @escaping (Result<String, Error>) -> Void
+    ) {
+        let url = URL(string: "http://127.0.0.1:8080/transcribe")!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("audio/wav", forHTTPHeaderField: "Content-Type")
-        request.setValue("\(audioData.count)", forHTTPHeaderField: "Content-Length")
-        request.httpBody = audioData
         request.timeoutInterval = .infinity
 
-        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+        // Upload only the finalized segment, leaving the active file untouched.
+        URLSession.shared.uploadTask(with: request, fromFile: session.audioURL) { [weak self] data, response, error in
             DispatchQueue.main.async {
                 guard let self else { return }
-
                 let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
-                guard error == nil, (200..<300).contains(statusCode), let data else {
-                    self.allowSleep()
-                    self.isTranscribing = false
-                    self.isQuickDictating = false
-                    self.engineStatusText = "Transcription failed"
-                    print("❌ Transcription request failed: \(error?.localizedDescription ?? "HTTP \(statusCode)")")
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in
-                        if self?.isQuickDictating == false && self?.isTranscribing == false {
-                            self?.engineStatusText = "Engine Ready"
-                        }
-                    }
+                if let error {
+                    completion(.failure(error))
                     return
                 }
-
-                guard let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                      let text = payload["text"] as? String,
-                      !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                    self.allowSleep()
-                    self.isTranscribing = false
-                    self.isQuickDictating = false
-                    self.engineStatusText = "No speech detected"
-                    print("ℹ️ No speech was detected")
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in
-                        if self?.isQuickDictating == false && self?.isTranscribing == false {
-                            self?.engineStatusText = "Engine Ready"
-                        }
-                    }
+                guard (200..<300).contains(statusCode), let data,
+                      let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      let text = payload["text"] as? String else {
+                    completion(.failure(NSError(domain: "Dictation", code: statusCode,
+                        userInfo: [NSLocalizedDescriptionKey: "Transcription failed (HTTP \(statusCode)). Retry this session."])))
                     return
                 }
-
-                self.engineStatusText = "Formatting notes…"
+                guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                    completion(.success(""))
+                    return
+                }
+                update(.formatting)
                 self.noteFormatter.format(text) { [weak self] formattedText in
-                    guard let self else { return }
-                    self.dictator.pasteDictationResult(formattedText) { [weak self] inserted in
-                        DispatchQueue.main.async {
-                            guard let self else { return }
-                            self.allowSleep()
-                            self.isTranscribing = false
-                            self.isQuickDictating = false
-                            if inserted {
-                                NSSound(named: "Glass")?.play()
-                                self.engineStatusText = "Notes pasted!"
-                                self.completionToast = "Pasted!"
-                            } else {
-                                self.engineStatusText = "Copied to clipboard (⌘V)"
-                                self.completionToast = "Copied (⌘V)"
-                            }
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
-                                self.completionToast = nil
-                                if !self.isQuickDictating && !self.isTranscribing {
-                                    self.engineStatusText = "Engine Ready"
-                                }
+                    DispatchQueue.main.async {
+                        guard let self else { return }
+                        update(.delivering)
+                        session.destination.pasteDictationResult(session.number > 1 ? "\n\n" + formattedText : formattedText) { [weak self] inserted in
+                            DispatchQueue.main.async {
+                                guard let self else { return }
+                                self.showCompletionToast("Session \(session.number): " + (inserted ? "Pasted!" : "Copied (⌘V)"))
+                                completion(.success(formattedText))
                             }
                         }
                     }
@@ -494,21 +521,36 @@ final class AppState: ObservableObject {
         }.resume()
     }
 
+    private func showCompletionToast(_ message: String) {
+        completionToast = message
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+            guard self?.completionToast == message else { return }
+            self?.completionToast = nil
+        }
+    }
+
+    func retrySession(_ session: Session) { sessionQueue.retry(session) }
+
+    func copySessionNotes(_ session: Session) {
+        guard let notes = session.notes else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(notes, forType: .string)
+        showCompletionToast("Session \(session.number): Copied (⌘V)")
+    }
+
+    /// Cancel only the current recording. Previously submitted sessions continue.
     func cancelQuickDictation() {
-        isQuickDictating = false
-        isTranscribing = false
-        meterTimer?.invalidate()
-        meterTimer = nil
-        audioLevel = 0
-        allowSleep()
-        audioRecorder.stopRecording { _ in }
-        engineStatusText = "Engine Ready"
-        print("Cancelled Quick Dictation.")
+        guard isQuickDictating else { return }
+        audioRecorder.stopRecording()
+        recordingDestination = nil
+        endRecordingUI()
+        refreshSessionState()
     }
 
     // MARK: - Sleep management
 
     private func preventSleep() {
+        guard powerAssertionID == 0 else { return }
         let reason = "Active Dictation Recording" as CFString
         _ = IOPMAssertionCreateWithName(
             kIOPMAssertionTypePreventUserIdleSystemSleep as CFString,
